@@ -7,6 +7,15 @@ import PlanSummaryGrid from './components/PlanSummaryGrid.vue'
 const merchantInput = ref('')
 const isHoliday = ref(isWeekendOrHoliday())
 const showAllPlans = ref(false)
+const amountInput = ref('')
+const selectedPayment = ref(null)
+
+const PAYMENT_METHODS = [
+  { id: 'taishin_pay', short: '台新Pay', activeClass: 'bg-blue-600 text-white border-blue-600', inactiveClass: 'bg-white text-blue-600 border-blue-200' },
+  { id: 'line_pay',    short: 'LINE Pay', activeClass: 'bg-green-500 text-white border-green-500', inactiveClass: 'bg-white text-green-600 border-green-200' },
+  { id: 'nfc_pay',     short: '感應Pay',  activeClass: 'bg-gray-700 text-white border-gray-700',   inactiveClass: 'bg-white text-gray-600 border-gray-200' },
+  { id: 'card',        short: '直刷',     activeClass: 'bg-taishin-red text-white border-taishin-red', inactiveClass: 'bg-white text-taishin-red border-red-200' },
+]
 
 function isWeekendOrHoliday() {
   const day = new Date().getDay()
@@ -71,6 +80,61 @@ const results = computed(() => {
     kaohsiungMicropayment,
   }
 })
+
+const BASE_RATE = 1
+
+const effectiveResult = computed(() => {
+  if (!results.value || !selectedPayment.value) return null
+  const r = results.value
+  const pm = selectedPayment.value
+  const holidayRate = isHoliday.value ? 2.0 : 0
+
+  let rate, planName, warning = null
+
+  if (pm === 'taishin_pay') {
+    if (r.hasTaishinPayBoost) {
+      rate = 3.8
+      planName = 'Pay著刷・台新Pay'
+    } else {
+      const plans = (r.matched || []).filter(p => p.id !== 'pay_taishin')
+      const best = plans[0]
+      const planRate = best?.rate ?? BASE_RATE
+      rate = Math.max(planRate, holidayRate)
+      planName = (isHoliday.value && holidayRate >= planRate)
+        ? '假日刷'
+        : (best ? `${best.planName}・${best.name}` : '一般消費（基本1%）')
+    }
+  } else if (pm === 'line_pay') {
+    if (r.linePayExclusion) {
+      rate = Math.max(BASE_RATE, holidayRate)
+      planName = isHoliday.value ? '假日刷' : '一般消費'
+      warning = `${r.linePayExclusion.label} — LINE Pay 不回饋`
+    } else {
+      rate = Math.max(2.3, holidayRate)
+      planName = (isHoliday.value && holidayRate > 2.3) ? '假日刷' : 'Pay著刷・LINE Pay'
+      if (r.hasDiningMatch) warning = '餐飲類僅 Pay著刷，不含好饗刷加成'
+    }
+  } else {
+    // card / nfc_pay
+    const plans = (r.matched || []).filter(p => p.id !== 'pay_taishin')
+    const best = plans[0]
+    if (r.kaohsiungMicropayment && !best) {
+      rate = holidayRate || 0
+      planName = isHoliday.value ? '假日刷' : '直刷無回饋'
+      warning = '此商家直刷走 NCCC 小額支付，建議改用 LINE Pay 2.3%'
+    } else {
+      const planRate = best?.rate ?? BASE_RATE
+      rate = Math.max(planRate, holidayRate)
+      planName = (isHoliday.value && holidayRate >= planRate)
+        ? '假日刷'
+        : (best ? `${best.planName}・${best.name}` : '一般消費（基本1%）')
+    }
+  }
+
+  const amount = parseFloat(amountInput.value)
+  const cashback = (!isNaN(amount) && amount > 0) ? Math.floor(amount * rate / 100) : null
+  return { rate, planName, warning, cashback, hasAmount: !isNaN(amount) && amount > 0 }
+})
 </script>
 
 <template>
@@ -116,6 +180,53 @@ const results = computed(() => {
 
       <!-- ======= RESULTS SECTION ======= -->
       <template v-if="results">
+
+        <!-- Calculator -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4 space-y-3">
+          <p class="text-xs font-semibold text-gray-500">回饋試算</p>
+
+          <!-- Amount input -->
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium pointer-events-none select-none">NT$</span>
+            <input
+              v-model="amountInput"
+              type="number"
+              min="0"
+              placeholder="消費金額"
+              class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-taishin-red focus:ring-2 focus:ring-red-100 outline-none text-gray-800 text-sm transition placeholder:text-gray-300"
+            />
+          </div>
+
+          <!-- Payment method buttons -->
+          <div class="grid grid-cols-4 gap-1.5">
+            <button
+              v-for="pm in PAYMENT_METHODS"
+              :key="pm.id"
+              @click="selectedPayment = selectedPayment === pm.id ? null : pm.id"
+              :class="['py-2 rounded-xl border text-xs font-semibold transition-all', selectedPayment === pm.id ? pm.activeClass : pm.inactiveClass]"
+            >{{ pm.short }}</button>
+          </div>
+
+          <!-- Result -->
+          <template v-if="effectiveResult">
+            <div :class="['rounded-xl px-4 py-3 flex items-center justify-between', effectiveResult.rate > 0 ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-200']">
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-gray-600">{{ effectiveResult.planName }}</p>
+                <p v-if="effectiveResult.warning" class="text-xs text-amber-600 mt-0.5">⚠ {{ effectiveResult.warning }}</p>
+                <p v-if="effectiveResult.hasAmount" class="text-base font-bold text-taishin-red mt-1">
+                  回饋 NT$ {{ effectiveResult.cashback.toLocaleString() }}
+                </p>
+                <p v-else class="text-xs text-gray-400 mt-0.5">輸入金額後顯示回饋</p>
+              </div>
+              <div class="text-right ml-3 shrink-0">
+                <p :class="['text-3xl font-extrabold', effectiveResult.rate > 0 ? 'text-taishin-red' : 'text-gray-300']">
+                  {{ effectiveResult.rate }}<span class="text-base font-bold">%</span>
+                </p>
+              </div>
+            </div>
+          </template>
+          <p v-else class="text-xs text-gray-400 text-center py-1">選擇付款方式查看適用回饋</p>
+        </div>
 
         <!-- FOUND results -->
         <template v-if="results.type === 'found'">
