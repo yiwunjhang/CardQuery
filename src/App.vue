@@ -43,6 +43,7 @@ const results = computed(() => {
       matched: [],
       best: null,
       hasTaishinPayBoost: false,
+      hasDiningMatch: isDiningMerchant(q),
       holiday: isHoliday.value ? holidayPlan : null,
       taishinPay,
       linePay,
@@ -54,12 +55,14 @@ const results = computed(() => {
 
   const sorted = [...matched].sort((a, b) => b.rate - a.rate)
   const hasTaishinPayBoost = matched.some(m => m.id === 'pay_taishin')
+  const hasDiningMatch = matched.some(m => m.planGroup === 'food')
 
   return {
     type: 'found',
     matched: sorted,
     best: sorted[0],
     hasTaishinPayBoost,
+    hasDiningMatch,
     taishinPay,
     linePay,
     holiday: isHoliday.value ? holidayPlan : null,
@@ -179,25 +182,23 @@ const results = computed(() => {
           </div>
 
           <!-- LINE Pay universal option -->
-          <div :class="['rounded-2xl shadow-sm border px-5 py-4', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100']">
+          <div :class="['rounded-2xl shadow-sm border px-5 py-4', results.linePayExclusion ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100']">
             <div class="flex items-center justify-between">
               <div>
                 <div class="flex items-center gap-2 mb-0.5">
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">LINE Pay</span>
                   <span class="text-xs text-gray-500">Pay著刷</span>
-                  <span v-if="results.linePayExclusion || results.kaohsiungMicropayment" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">此商家不適用</span>
+                  <span v-if="results.linePayExclusion" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">此商家不適用</span>
                 </div>
-                <p :class="['text-sm', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'text-gray-400 line-through' : 'text-gray-600']">LINE Pay 綁定台新GOGO卡</p>
+                <p :class="['text-sm', results.linePayExclusion ? 'text-gray-400 line-through' : 'text-gray-600']">LINE Pay 綁定台新GOGO卡</p>
+                <p v-if="results.hasDiningMatch && !results.linePayExclusion" class="text-xs text-amber-600 mt-0.5">餐飲消費用 LINE Pay 僅適用此 2.3%，不含好饗刷加成</p>
               </div>
               <div class="text-right shrink-0 ml-3">
-                <p :class="['text-2xl font-extrabold', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'text-gray-300' : 'text-green-600']">2.3<span class="text-base">%</span></p>
+                <p :class="['text-2xl font-extrabold', results.linePayExclusion ? 'text-gray-300' : 'text-green-600']">2.3<span class="text-base">%</span></p>
               </div>
             </div>
-            <div v-if="results.linePayExclusion || results.kaohsiungMicropayment" class="mt-2.5 pt-2.5 border-t border-gray-200">
-              <p v-if="results.kaohsiungMicropayment" class="text-xs text-red-700">
-                <strong>NCCC 小額支付特約商店</strong> 不適用 LINE Pay 回饋。請改用台新Pay或其他方案。
-              </p>
-              <p v-else class="text-xs text-red-700">
+            <div v-if="results.linePayExclusion" class="mt-2.5 pt-2.5 border-t border-gray-200">
+              <p class="text-xs text-red-700">
                 <strong>{{ results.linePayExclusion.label }}</strong> 不適用 LINE Pay 回饋。{{ results.linePayExclusion.suggestion }}
               </p>
             </div>
@@ -211,7 +212,7 @@ const results = computed(() => {
               <p class="text-xs text-amber-700 mt-1">
                 此商家屬於<strong>{{ results.diningExclusion.label }}</strong>，{{ results.diningExclusion.reason }}。
               </p>
-              <p v-if="!results.linePayExclusion && !results.kaohsiungMicropayment" class="text-xs text-amber-600 mt-1">建議改用 <strong>LINE Pay 2.3%</strong> 或確認店家是否有台新Pay優惠。</p>
+              <p v-if="!results.linePayExclusion" class="text-xs text-amber-600 mt-1">建議改用 <strong>LINE Pay 2.3%</strong> 或確認店家是否有台新Pay優惠。</p>
               <p v-else class="text-xs text-red-700 mt-1">此商家 LINE Pay 亦不回饋，請確認是否符合台新Pay 3.8% 優惠。</p>
             </div>
           </div>
@@ -222,9 +223,12 @@ const results = computed(() => {
             <div>
               <p class="text-sm font-semibold text-sky-800">高雄市 NCCC 小額支付特約商店</p>
               <p class="text-xs text-sky-700 mt-1">
-                在名單中找到「<strong>{{ results.kaohsiungMicropayment }}</strong>」，此商家透過聯合信用卡處理中心小額支付平台收費。
+                在名單中找到「<strong>{{ results.kaohsiungMicropayment }}</strong>」，此商家透過聯合信用卡處理中心小額支付平台收費（帳單顯示「聯信-」）。
               </p>
-              <p class="text-xs text-sky-600 mt-1">LINE Pay 2.3% 回饋不適用；若為餐飲類，好饗刷 3.3% 亦不適用。</p>
+              <p class="text-xs text-sky-600 mt-1">
+                直刷信用卡（聯信）<strong>無回饋</strong>；請改用 <strong>LINE Pay 2.3%</strong>。
+                若為連鎖飲料或速食類，好饗刷 3.3% 亦不適用。
+              </p>
             </div>
           </div>
         </template>
@@ -236,17 +240,16 @@ const results = computed(() => {
             <p class="text-xs text-gray-400 mt-0.5">可改用以下通用回饋方式</p>
           </div>
           <div class="px-5 py-4 space-y-3">
-            <div :class="['flex items-center justify-between p-3 rounded-xl border', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-100']">
+            <div :class="['flex items-center justify-between p-3 rounded-xl border', results.linePayExclusion ? 'bg-gray-50 border-gray-200' : 'bg-green-50 border-green-100']">
               <div>
                 <div class="flex items-center gap-1.5">
-                  <p :class="['text-sm font-semibold', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'text-gray-400 line-through' : 'text-green-800']">LINE Pay 綁定刷卡</p>
-                  <span v-if="results.linePayExclusion || results.kaohsiungMicropayment" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">不適用</span>
+                  <p :class="['text-sm font-semibold', results.linePayExclusion ? 'text-gray-400 line-through' : 'text-green-800']">LINE Pay 綁定刷卡</p>
+                  <span v-if="results.linePayExclusion" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">不適用</span>
                 </div>
-                <p v-if="results.kaohsiungMicropayment" class="text-xs text-red-600 mt-0.5">NCCC 小額支付特約商店 — LINE Pay 不回饋</p>
-                <p v-else-if="results.linePayExclusion" class="text-xs text-red-600 mt-0.5">{{ results.linePayExclusion.label }} — {{ results.linePayExclusion.suggestion }}</p>
+                <p v-if="results.linePayExclusion" class="text-xs text-red-600 mt-0.5">{{ results.linePayExclusion.label }} — {{ results.linePayExclusion.suggestion }}</p>
                 <p v-else class="text-xs text-green-600">全通路適用</p>
               </div>
-              <span :class="['text-2xl font-extrabold', (results.linePayExclusion || results.kaohsiungMicropayment) ? 'text-gray-300' : 'text-green-700']">2.3%</span>
+              <span :class="['text-2xl font-extrabold', results.linePayExclusion ? 'text-gray-300' : 'text-green-700']">2.3%</span>
             </div>
             <div v-if="isHoliday" class="flex items-center justify-between p-3 bg-pink-50 rounded-xl border border-pink-100">
               <div>
@@ -272,12 +275,12 @@ const results = computed(() => {
                 <div>
                   <p class="text-xs font-semibold text-sky-800">高雄市 NCCC 小額支付特約商店</p>
                   <p class="text-xs text-sky-700 mt-0.5">
-                    在名單中找到「<strong>{{ results.kaohsiungMicropayment }}</strong>」，LINE Pay 回饋不適用；若為餐飲類，好饗刷 3.3% 亦不適用。
+                    在名單中找到「<strong>{{ results.kaohsiungMicropayment }}</strong>」，直刷信用卡（聯信）無回饋，請改用 <strong>LINE Pay 2.3%</strong>。若為連鎖飲料或速食類，好饗刷 3.3% 亦不適用。
                   </p>
                 </div>
               </div>
             </template>
-            <p v-if="!results.diningExclusion && !results.kaohsiungMicropayment" class="text-xs text-gray-400 text-center">若為一般餐廳（非連鎖飲料/速食），切換「好饗刷」可享 3.3%</p>
+            <p v-if="!results.diningExclusion" class="text-xs text-gray-400 text-center">若為一般餐廳（非連鎖飲料/速食），切換「好饗刷」可享 3.3%</p>
           </div>
         </div>
 
