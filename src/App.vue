@@ -2,10 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { searchMerchant, isDiningMerchant, isDiningExcluded, isLinePayExcluded, PLANS, PLAN_GROUP_META } from './data/rewards.js'
 import { findKaohsiungMicropayment } from './data/kaohsiung-micropayment.js'
+import { searchJiangJiang, JJ_CATEGORIES } from './data/jiangjiang-rewards.js'
 import PlanSummaryGrid from './components/PlanSummaryGrid.vue'
-import JiangJiangView from './components/JiangJiangView.vue'
-
-const selectedCard = ref('gogo')
 
 const merchantInput = ref('')
 const isHoliday = ref(isWeekendOrHoliday())
@@ -86,6 +84,52 @@ const results = computed(() => {
 
 const BASE_RATE = 1
 
+// Auto best rate for GOGO (best possible without specifying payment method)
+const gogoBestRate = computed(() => {
+  if (!results.value) return null
+  const r = results.value
+  const holidayRate = isHoliday.value ? 2.0 : 0
+  if (r.hasTaishinPayBoost) return { rate: 3.8, label: 'Pay著刷・台新Pay' }
+  const plans = (r.matched || []).filter(p => p.id !== 'pay_taishin')
+  const best = plans[0]
+  if (best) {
+    const rate = Math.max(best.rate, holidayRate)
+    return { rate, label: (isHoliday.value && holidayRate >= best.rate) ? '假日刷' : `${best.planName}・${best.name}` }
+  }
+  if (!r.linePayExclusion) {
+    const rate = Math.max(2.3, holidayRate)
+    return { rate, label: rate > 2.3 ? '假日刷' : 'Pay著刷・LINE Pay' }
+  }
+  return { rate: Math.max(BASE_RATE, holidayRate), label: isHoliday.value ? '假日刷' : '一般消費（基本1%）' }
+})
+
+// JiangJiang best rate for the searched merchant
+const jiangjiangRate = computed(() => {
+  const q = merchantInput.value.trim()
+  if (!q) return null
+  const matched = searchJiangJiang(q)
+  if (matched.length > 0) {
+    return { rate: 4.5, label: JJ_CATEGORIES[matched[0].id]?.name ?? '指定通路', direct: true }
+  }
+  return { rate: 4.5, label: '行動支付', direct: false, note: '需使用 LINE Pay / 街口等指定行動支付' }
+})
+
+const bestCard = computed(() => {
+  if (!gogoBestRate.value || !jiangjiangRate.value) return null
+  if (gogoBestRate.value.rate > jiangjiangRate.value.rate) return 'gogo'
+  if (jiangjiangRate.value.rate > gogoBestRate.value.rate) return 'jiangjiang'
+  return 'tie'
+})
+
+const compareAmount = computed(() => {
+  const n = parseFloat(amountInput.value)
+  if (isNaN(n) || n <= 0) return null
+  return {
+    gogo: Math.floor(n * (gogoBestRate.value?.rate ?? 0) / 100),
+    jj: Math.round(n * 4.5 / 100),
+  }
+})
+
 const effectiveResult = computed(() => {
   if (!results.value || !selectedPayment.value) return null
   const r = results.value
@@ -145,18 +189,15 @@ const effectiveResult = computed(() => {
     <!-- Header -->
     <header class="bg-white/90 backdrop-blur sticky top-0 z-10 shadow-sm border-b border-gray-100">
       <div class="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
-        <div :class="['w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-sm', selectedCard === 'gogo' ? 'bg-taishin-red' : 'bg-amber-500']">
-          <span class="text-white font-bold text-base leading-none">{{ selectedCard === 'gogo' ? '台' : '將' }}</span>
+        <div class="w-9 h-9 bg-taishin-red rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+          <span class="text-white font-bold text-base leading-none">卡</span>
         </div>
         <div class="flex-1 min-w-0">
-          <h1 class="text-base font-bold text-gray-900 leading-tight">
-            {{ selectedCard === 'gogo' ? '台新 GOGO 卡回饋查詢' : '將將卡生活升級查詢' }}
-          </h1>
-          <p class="text-xs text-gray-400">輸入商家，找出最高回饋方案</p>
+          <h1 class="text-base font-bold text-gray-900 leading-tight">信用卡回饋查詢</h1>
+          <p class="text-xs text-gray-400">GOGO 卡 vs 將將卡，自動比較最高回饋</p>
         </div>
-        <!-- Holiday badge (GOGO only) -->
+        <!-- Holiday badge -->
         <div
-          v-if="selectedCard === 'gogo'"
           :class="['flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer select-none transition-all', isHoliday ? 'bg-pink-100 text-pink-700' : 'bg-gray-100 text-gray-500']"
           @click="isHoliday = !isHoliday"
           title="點擊切換假日/平日"
@@ -168,24 +209,6 @@ const effectiveResult = computed(() => {
     </header>
 
     <main class="max-w-xl mx-auto px-4 py-5 space-y-4">
-
-      <!-- Card selector -->
-      <div class="flex gap-1.5 bg-gray-100 p-1 rounded-2xl">
-        <button
-          @click="selectedCard = 'gogo'"
-          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-all', selectedCard === 'gogo' ? 'bg-white text-taishin-red shadow-sm' : 'text-gray-500 hover:text-gray-700']"
-        >台新 GOGO 卡</button>
-        <button
-          @click="selectedCard = 'jiangjiang'"
-          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-all', selectedCard === 'jiangjiang' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700']"
-        >將將卡</button>
-      </div>
-
-      <!-- JiangJiang view -->
-      <JiangJiangView v-if="selectedCard === 'jiangjiang'" />
-
-      <!-- GOGO card content -->
-      <template v-if="selectedCard === 'gogo'">
 
       <!-- Search Input -->
       <div class="relative">
@@ -206,51 +229,102 @@ const effectiveResult = computed(() => {
       <!-- ======= RESULTS SECTION ======= -->
       <template v-if="results">
 
-        <!-- Calculator -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4 space-y-3">
-          <p class="text-xs font-semibold text-gray-500">回饋試算</p>
+        <!-- ===== Card Comparison ===== -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+            <span class="text-sm">⚖️</span>
+            <span class="text-sm font-semibold text-gray-700">回饋比較</span>
+          </div>
 
           <!-- Amount input -->
-          <div class="relative">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium pointer-events-none select-none">NT$</span>
-            <input
-              v-model="amountInput"
-              type="number"
-              min="0"
-              placeholder="消費金額"
-              class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-taishin-red focus:ring-2 focus:ring-red-100 outline-none text-gray-800 text-sm transition placeholder:text-gray-300"
-            />
-          </div>
-
-          <!-- Payment method buttons -->
-          <div class="grid grid-cols-4 gap-1.5">
-            <button
-              v-for="pm in PAYMENT_METHODS"
-              :key="pm.id"
-              @click="selectedPayment = selectedPayment === pm.id ? null : pm.id"
-              :class="['py-2 rounded-xl border text-xs font-semibold transition-all', selectedPayment === pm.id ? pm.activeClass : pm.inactiveClass]"
-            >{{ pm.short }}</button>
-          </div>
-
-          <!-- Result -->
-          <template v-if="effectiveResult">
-            <div :class="['rounded-xl px-4 py-3 flex items-center justify-between', effectiveResult.rate > 0 ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-200']">
-              <div class="flex-1 min-w-0">
-                <p class="text-xs font-medium text-gray-600">{{ effectiveResult.planName }}</p>
-                <p v-if="effectiveResult.warning" class="text-xs text-amber-600 mt-0.5">⚠ {{ effectiveResult.warning }}</p>
-                <p v-if="effectiveResult.hasAmount" class="text-base font-bold text-taishin-red mt-1">
-                  回饋 NT$ {{ effectiveResult.cashback.toLocaleString() }}
-                </p>
-                <p v-else class="text-xs text-gray-400 mt-0.5">輸入金額後顯示回饋</p>
-              </div>
-              <div class="text-right ml-3 shrink-0">
-                <p :class="['text-3xl font-extrabold', effectiveResult.rate > 0 ? 'text-taishin-red' : 'text-gray-300']">
-                  {{ effectiveResult.rate }}<span class="text-base font-bold">%</span>
-                </p>
-              </div>
+          <div class="px-5 pt-4 pb-3">
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium pointer-events-none select-none">NT$</span>
+              <input
+                v-model="amountInput"
+                type="number"
+                min="0"
+                placeholder="輸入金額計算回饋"
+                class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-taishin-red focus:ring-2 focus:ring-red-100 outline-none text-gray-800 text-sm transition placeholder:text-gray-300"
+              />
             </div>
-          </template>
-          <p v-else class="text-xs text-gray-400 text-center py-1">選擇付款方式查看適用回饋</p>
+          </div>
+
+          <!-- Two-column comparison -->
+          <div class="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+
+            <!-- GOGO Card -->
+            <div :class="['px-4 py-4', bestCard === 'gogo' ? 'bg-red-50' : 'bg-white']">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-taishin-red">台新 GOGO 卡</span>
+                <span v-if="bestCard === 'gogo'" class="text-xs bg-taishin-red text-white px-1.5 py-0.5 rounded-full font-bold">推薦</span>
+                <span v-else-if="bestCard === 'tie'" class="text-xs bg-gray-400 text-white px-1.5 py-0.5 rounded-full">並列</span>
+              </div>
+              <p class="text-3xl font-extrabold text-taishin-red leading-none">
+                {{ gogoBestRate?.rate }}<span class="text-base">%</span>
+              </p>
+              <p class="text-xs text-gray-500 mt-1 leading-snug">{{ gogoBestRate?.label }}</p>
+              <p v-if="compareAmount" class="text-sm font-bold text-taishin-red mt-2">
+                NT$ {{ compareAmount.gogo.toLocaleString() }} 回饋
+              </p>
+            </div>
+
+            <!-- JiangJiang Card -->
+            <div :class="['px-4 py-4', bestCard === 'jiangjiang' ? 'bg-amber-50' : 'bg-white']">
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="text-xs font-bold text-amber-600">將將卡</span>
+                <span v-if="bestCard === 'jiangjiang'" class="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">推薦</span>
+                <span v-else-if="bestCard === 'tie'" class="text-xs bg-gray-400 text-white px-1.5 py-0.5 rounded-full">並列</span>
+              </div>
+              <p class="text-3xl font-extrabold text-amber-600 leading-none">
+                4.5<span class="text-base">%</span>
+              </p>
+              <p class="text-xs text-gray-500 mt-1 leading-snug">{{ jiangjiangRate?.label }}</p>
+              <p v-if="!jiangjiangRate?.direct" class="text-xs text-amber-500 mt-0.5">需指定行動支付</p>
+              <p v-if="compareAmount" class="text-sm font-bold text-amber-600 mt-2">
+                {{ compareAmount.jj.toLocaleString() }} N點
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calculator -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="px-5 py-3 bg-gradient-to-r from-taishin-red to-taishin-light flex items-center gap-2">
+            <span class="text-white/80 text-xs font-medium">台新 GOGO 卡</span>
+            <span class="text-white font-bold text-sm">回饋試算</span>
+          </div>
+          <div class="px-5 py-4 space-y-3">
+            <!-- Payment method buttons -->
+            <div class="grid grid-cols-4 gap-1.5">
+              <button
+                v-for="pm in PAYMENT_METHODS"
+                :key="pm.id"
+                @click="selectedPayment = selectedPayment === pm.id ? null : pm.id"
+                :class="['py-2 rounded-xl border text-xs font-semibold transition-all', selectedPayment === pm.id ? pm.activeClass : pm.inactiveClass]"
+              >{{ pm.short }}</button>
+            </div>
+
+            <!-- Result -->
+            <template v-if="effectiveResult">
+              <div :class="['rounded-xl px-4 py-3 flex items-center justify-between', effectiveResult.rate > 0 ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-200']">
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-gray-600">{{ effectiveResult.planName }}</p>
+                  <p v-if="effectiveResult.warning" class="text-xs text-amber-600 mt-0.5">⚠ {{ effectiveResult.warning }}</p>
+                  <p v-if="effectiveResult.hasAmount" class="text-base font-bold text-taishin-red mt-1">
+                    回饋 NT$ {{ effectiveResult.cashback.toLocaleString() }}
+                  </p>
+                  <p v-else class="text-xs text-gray-400 mt-0.5">輸入金額後顯示回饋</p>
+                </div>
+                <div class="text-right ml-3 shrink-0">
+                  <p :class="['text-3xl font-extrabold', effectiveResult.rate > 0 ? 'text-taishin-red' : 'text-gray-300']">
+                    {{ effectiveResult.rate }}<span class="text-base font-bold">%</span>
+                  </p>
+                </div>
+              </div>
+            </template>
+            <p v-else class="text-xs text-gray-400 text-center py-1">選擇付款方式查看適用回饋</p>
+          </div>
         </div>
 
         <!-- FOUND results -->
@@ -465,7 +539,6 @@ const effectiveResult = computed(() => {
         回饋上限、資格條件請詳閱台新官網。
       </p>
 
-      </template> <!-- end GOGO card content -->
     </main>
   </div>
 </template>
