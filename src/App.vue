@@ -3,6 +3,9 @@ import { ref, computed, watch } from 'vue'
 import { searchMerchant, isDiningMerchant, isDiningExcluded, isLinePayExcluded, PLANS, PLAN_GROUP_META } from './data/rewards.js'
 import { findKaohsiungMicropayment } from './data/kaohsiung-micropayment.js'
 import PlanSummaryGrid from './components/PlanSummaryGrid.vue'
+import JiangJiangView from './components/JiangJiangView.vue'
+
+const selectedCard = ref('gogo')
 
 const merchantInput = ref('')
 const isHoliday = ref(isWeekendOrHoliday())
@@ -142,15 +145,18 @@ const effectiveResult = computed(() => {
     <!-- Header -->
     <header class="bg-white/90 backdrop-blur sticky top-0 z-10 shadow-sm border-b border-gray-100">
       <div class="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
-        <div class="w-9 h-9 bg-taishin-red rounded-lg flex items-center justify-center shrink-0 shadow-sm">
-          <span class="text-white font-bold text-base leading-none">台</span>
+        <div :class="['w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-sm', selectedCard === 'gogo' ? 'bg-taishin-red' : 'bg-amber-500']">
+          <span class="text-white font-bold text-base leading-none">{{ selectedCard === 'gogo' ? '台' : '將' }}</span>
         </div>
         <div class="flex-1 min-w-0">
-          <h1 class="text-base font-bold text-gray-900 leading-tight">台新 GOGO 卡回饋查詢</h1>
+          <h1 class="text-base font-bold text-gray-900 leading-tight">
+            {{ selectedCard === 'gogo' ? '台新 GOGO 卡回饋查詢' : '將將卡生活升級查詢' }}
+          </h1>
           <p class="text-xs text-gray-400">輸入商家，找出最高回饋方案</p>
         </div>
-        <!-- Holiday badge -->
+        <!-- Holiday badge (GOGO only) -->
         <div
+          v-if="selectedCard === 'gogo'"
           :class="['flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer select-none transition-all', isHoliday ? 'bg-pink-100 text-pink-700' : 'bg-gray-100 text-gray-500']"
           @click="isHoliday = !isHoliday"
           title="點擊切換假日/平日"
@@ -162,6 +168,25 @@ const effectiveResult = computed(() => {
     </header>
 
     <main class="max-w-xl mx-auto px-4 py-5 space-y-4">
+
+      <!-- Card selector -->
+      <div class="flex gap-1.5 bg-gray-100 p-1 rounded-2xl">
+        <button
+          @click="selectedCard = 'gogo'"
+          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-all', selectedCard === 'gogo' ? 'bg-white text-taishin-red shadow-sm' : 'text-gray-500 hover:text-gray-700']"
+        >台新 GOGO 卡</button>
+        <button
+          @click="selectedCard = 'jiangjiang'"
+          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-all', selectedCard === 'jiangjiang' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700']"
+        >將將卡</button>
+      </div>
+
+      <!-- JiangJiang view -->
+      <JiangJiangView v-if="selectedCard === 'jiangjiang'" />
+
+      <!-- GOGO card content -->
+      <template v-if="selectedCard === 'gogo'">
+
       <!-- Search Input -->
       <div class="relative">
         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-lg">🔍</span>
@@ -439,6 +464,8 @@ const effectiveResult = computed(() => {
         資料以台新銀行官方公告為準，本工具僅供參考。<br/>
         回饋上限、資格條件請詳閱台新官網。
       </p>
+
+      </template> <!-- end GOGO card content -->
     </main>
   </div>
 </template>
