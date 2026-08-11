@@ -84,23 +84,28 @@ const results = computed(() => {
 
 const BASE_RATE = 1
 
+// LINE Pay 也適用 Chill刷，Chill刷指定通路不受 Pay著刷 2.3% 排除條款限制
+const chillBestMatch = computed(() => results.value?.matched?.find(p => p.planGroup === 'chill') ?? null)
+
+// Pick the highest-rate option out of a candidate list
+function pickBest(candidates) {
+  return candidates.filter(Boolean).sort((a, b) => b.rate - a.rate)[0]
+}
+
 // Auto best rate for GOGO (best possible without specifying payment method)
 const gogoBestRate = computed(() => {
   if (!results.value) return null
   const r = results.value
   const holidayRate = isHoliday.value ? 2.0 : 0
-  if (r.hasTaishinPayBoost) return { rate: 3.8, label: 'Pay著刷・台新Pay' }
-  const plans = (r.matched || []).filter(p => p.id !== 'pay_taishin')
-  const best = plans[0]
-  if (best) {
-    const rate = Math.max(best.rate, holidayRate)
-    return { rate, label: (isHoliday.value && holidayRate >= best.rate) ? '假日刷' : `${best.planName}・${best.name}` }
-  }
-  if (!r.linePayExclusion) {
-    const rate = Math.max(2.3, holidayRate)
-    return { rate, label: rate > 2.3 ? '假日刷' : 'Pay著刷・LINE Pay' }
-  }
-  return { rate: Math.max(BASE_RATE, holidayRate), label: isHoliday.value ? '假日刷' : '一般消費（基本1%）' }
+  const best = (r.matched || []).filter(p => p.id !== 'pay_taishin')[0]
+
+  const candidates = [
+    r.hasTaishinPayBoost ? { rate: 3.8, label: 'Pay著刷・台新Pay' } : null,
+    best ? { rate: best.rate, label: `${best.planName}・${best.name}` } : null,
+    isHoliday.value ? { rate: holidayRate, label: '假日刷' } : null,
+    (!best && !r.linePayExclusion) ? { rate: 2.3, label: 'Pay著刷・LINE Pay' } : null,
+  ]
+  return pickBest(candidates) ?? { rate: BASE_RATE, label: '一般消費（基本1%）' }
 })
 
 // JiangJiang best rate for the searched merchant
@@ -139,27 +144,31 @@ const effectiveResult = computed(() => {
   let rate, planName, warning = null
 
   if (pm === 'taishin_pay') {
-    if (r.hasTaishinPayBoost) {
-      rate = 3.8
-      planName = 'Pay著刷・台新Pay'
-    } else {
-      const plans = (r.matched || []).filter(p => p.id !== 'pay_taishin')
-      const best = plans[0]
-      const planRate = best?.rate ?? BASE_RATE
-      rate = Math.max(planRate, holidayRate)
-      planName = (isHoliday.value && holidayRate >= planRate)
-        ? '假日刷'
-        : (best ? `${best.planName}・${best.name}` : '一般消費（基本1%）')
-    }
+    const best = (r.matched || []).filter(p => p.id !== 'pay_taishin')[0]
+    const pick = pickBest([
+      r.hasTaishinPayBoost ? { rate: 3.8, label: 'Pay著刷・台新Pay' } : null,
+      best ? { rate: best.rate, label: `${best.planName}・${best.name}` } : null,
+      isHoliday.value ? { rate: holidayRate, label: '假日刷' } : null,
+    ]) ?? { rate: BASE_RATE, label: '一般消費（基本1%）' }
+    rate = pick.rate
+    planName = pick.label
   } else if (pm === 'line_pay') {
-    if (r.linePayExclusion) {
+    // LINE Pay 綁定消費僅適用 Chill刷、Pay著刷、假日刷
+    const chillBest = (r.matched || []).find(p => p.planGroup === 'chill')
+    if (r.linePayExclusion && !chillBest) {
       rate = Math.max(BASE_RATE, holidayRate)
       planName = isHoliday.value ? '假日刷' : '一般消費'
       warning = `${r.linePayExclusion.label} — LINE Pay 不回饋`
     } else {
-      rate = Math.max(2.3, holidayRate)
-      planName = (isHoliday.value && holidayRate > 2.3) ? '假日刷' : 'Pay著刷・LINE Pay'
-      if (r.hasDiningMatch) warning = '餐飲類僅 Pay著刷，不含好饗刷加成'
+      const pick = pickBest([
+        chillBest ? { rate: chillBest.rate, label: `${chillBest.planName}・${chillBest.name}` } : null,
+        r.linePayExclusion ? null : { rate: 2.3, label: 'Pay著刷・LINE Pay' },
+        isHoliday.value ? { rate: holidayRate, label: '假日刷' } : null,
+      ]) ?? { rate: BASE_RATE, label: '一般消費（基本1%）' }
+      rate = pick.rate
+      planName = pick.label
+      if (chillBest) warning = '需切換至「Chill刷」方案'
+      else if (r.hasDiningMatch) warning = '餐飲類僅 Pay著刷，不含好饗刷加成'
     }
   } else {
     // card / nfc_pay
@@ -175,6 +184,9 @@ const effectiveResult = computed(() => {
       planName = (isHoliday.value && holidayRate >= planRate)
         ? '假日刷'
         : (best ? `${best.planName}・${best.name}` : '一般消費（基本1%）')
+      if (r.kaohsiungMicropayment) {
+        warning = '此商家直刷走 NCCC 小額支付（帳單顯示「聯信-」），可能不予回饋，建議改用 LINE Pay'
+      }
     }
   }
 
@@ -339,7 +351,7 @@ const effectiveResult = computed(() => {
               <div class="text-right">
                 <p class="text-white/70 text-xs">最高可得</p>
                 <p class="text-white text-2xl font-extrabold">
-                  {{ results.hasTaishinPayBoost ? '3.8' : results.best?.rate }}
+                  {{ Math.max(results.hasTaishinPayBoost ? 3.8 : 0, results.best?.rate ?? 0) }}
                   <span class="text-base font-bold">%</span>
                 </p>
               </div>
@@ -391,23 +403,25 @@ const effectiveResult = computed(() => {
             </div>
           </div>
 
-          <!-- LINE Pay universal option -->
-          <div :class="['rounded-2xl shadow-sm border px-5 py-4', results.linePayExclusion ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100']">
+          <!-- LINE Pay option（適用 Chill刷 / Pay著刷 / 假日刷） -->
+          <div :class="['rounded-2xl shadow-sm border px-5 py-4', (results.linePayExclusion && !chillBestMatch) ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100']">
             <div class="flex items-center justify-between">
               <div>
                 <div class="flex items-center gap-2 mb-0.5">
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">LINE Pay</span>
-                  <span class="text-xs text-gray-500">Pay著刷</span>
-                  <span v-if="results.linePayExclusion" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">此商家不適用</span>
+                  <span class="text-xs text-gray-500">{{ chillBestMatch ? `Chill刷・${chillBestMatch.name}` : 'Pay著刷' }}</span>
+                  <span v-if="results.linePayExclusion && !chillBestMatch" class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">此商家不適用</span>
                 </div>
-                <p :class="['text-sm', results.linePayExclusion ? 'text-gray-400 line-through' : 'text-gray-600']">LINE Pay 綁定台新GOGO卡</p>
-                <p v-if="results.hasDiningMatch && !results.linePayExclusion" class="text-xs text-amber-600 mt-0.5">餐飲消費用 LINE Pay 僅適用此 2.3%，不含好饗刷加成</p>
+                <p :class="['text-sm', (results.linePayExclusion && !chillBestMatch) ? 'text-gray-400 line-through' : 'text-gray-600']">LINE Pay 綁定台新GOGO卡</p>
+                <p v-if="chillBestMatch" class="text-xs text-teal-600 mt-0.5">需切換至「Chill刷」；LINE Pay 綁定消費限 Chill刷、Pay著刷、假日刷</p>
+                <p v-else-if="results.hasDiningMatch && !results.linePayExclusion" class="text-xs text-amber-600 mt-0.5">餐飲消費用 LINE Pay 僅適用此 2.3%，不含好饗刷加成</p>
               </div>
               <div class="text-right shrink-0 ml-3">
-                <p :class="['text-2xl font-extrabold', results.linePayExclusion ? 'text-gray-300' : 'text-green-600']">2.3<span class="text-base">%</span></p>
+                <p v-if="chillBestMatch" class="text-2xl font-extrabold text-teal-600">{{ chillBestMatch.rate }}<span class="text-base">%</span></p>
+                <p v-else :class="['text-2xl font-extrabold', results.linePayExclusion ? 'text-gray-300' : 'text-green-600']">2.3<span class="text-base">%</span></p>
               </div>
             </div>
-            <div v-if="results.linePayExclusion" class="mt-2.5 pt-2.5 border-t border-gray-200">
+            <div v-if="results.linePayExclusion && !chillBestMatch" class="mt-2.5 pt-2.5 border-t border-gray-200">
               <p class="text-xs text-red-700">
                 <strong>{{ results.linePayExclusion.label }}</strong> 不適用 LINE Pay 回饋。{{ results.linePayExclusion.suggestion }}
               </p>
@@ -438,6 +452,9 @@ const effectiveResult = computed(() => {
               <p class="text-xs text-sky-600 mt-1">
                 直刷信用卡（聯信）<strong>無回饋</strong>；請改用 <strong>LINE Pay 2.3%</strong>。
                 若為連鎖飲料或速食類，好饗刷 3.3% 亦不適用。
+              </p>
+              <p v-if="chillBestMatch" class="text-xs text-teal-700 mt-1">
+                但此商家屬 Chill刷 指定通路，切換「Chill刷」以 LINE Pay 付款可享 <strong>{{ chillBestMatch.rate }}%</strong>。
               </p>
             </div>
           </div>
@@ -531,6 +548,8 @@ const effectiveResult = computed(() => {
           <li>全家、7-11 在「天天刷」方案中需使用台新Pay</li>
           <li>同一商家若同時符合多個方案，以最高回饋為準</li>
           <li>假日刷（2%）適用於週六日及國定假日所有消費</li>
+          <li>新增「Chill刷」最高 10%（2026/7/8–9/30），指定通路限獨立店或官網</li>
+          <li>LINE Pay 綁定僅適用 Chill刷、Pay著刷、假日刷；全盈+Pay 僅 Pay著刷、假日刷</li>
         </ul>
       </div>
 

@@ -3,18 +3,32 @@ import { PLAN_GROUP_META } from '../data/rewards.js'
 
 const plans = [
   {
+    group: 'chill',
+    items: [
+      { label: '歡聚微醺', rate: '10%', note: '火鍋、燒肉、酒吧' },
+      { label: '日常續命', rate: '10%', note: '50嵐、得正、CAFE!N' },
+      { label: '約會犒賞', rate: '5%', note: '饗饗、NAGOMI' },
+      { label: '應援追星', rate: '5%', note: 'WEVERSE、五大唱片' },
+      { label: '熬夜追更', rate: '5%', note: '巴哈、Netflix、Disney+' },
+      { label: '營養補給', rate: '5%', note: 'VITABOX、MYPROTEIN' },
+      { label: '體態養成', rate: '5%', note: 'World Gym、健身工廠' },
+      { label: '運動品牌', rate: '5%', note: 'Nike、Adidas、HOKA' },
+      { label: '數位外掛', rate: '3.3%', note: 'Apple、Samsung、DJI' },
+    ],
+  },
+  {
     group: 'pay',
     items: [
       { label: '台新Pay / 台新Pay+', rate: '3.8%', note: '指定門市' },
-      { label: 'LINE Pay', rate: '2.3%', note: '全通路' },
+      { label: 'LINE Pay / 全盈+Pay', rate: '2.3%', note: '全通路' },
     ],
   },
   {
     group: 'daily',
     items: [
-      { label: '超商量販', rate: '3.3%', note: '全家、7-11需台新Pay' },
+      { label: '日常採買', rate: '3.3%', note: '全家、7-11需台新Pay' },
       { label: '通勤交通', rate: '3.3%', note: '' },
-      { label: '加油充電', rate: '3.3%', note: '' },
+      { label: '加油充電/停車', rate: '3.3%', note: '' },
       { label: '藥妝藥局', rate: '3.3%', note: '' },
     ],
   },
@@ -59,12 +73,13 @@ const plans = [
   {
     group: 'holiday',
     items: [
-      { label: '節假日不限通路', rate: '2%', note: '含保費、LINE Pay' },
+      { label: '節假日不限通路', rate: '2%', note: '含保費、LINE Pay、全盈+Pay' },
     ],
   },
 ]
 
 const groupBgMap = {
+  chill: 'bg-teal-50 border-teal-100',
   pay: 'bg-blue-50 border-blue-100',
   daily: 'bg-orange-50 border-orange-100',
   big: 'bg-purple-50 border-purple-100',
@@ -75,6 +90,7 @@ const groupBgMap = {
 }
 
 const groupTextMap = {
+  chill: 'text-teal-700',
   pay: 'text-blue-700',
   daily: 'text-orange-700',
   big: 'text-purple-700',
@@ -85,6 +101,7 @@ const groupTextMap = {
 }
 
 const groupHeaderMap = {
+  chill: 'bg-teal-600',
   pay: 'bg-blue-600',
   daily: 'bg-orange-500',
   big: 'bg-purple-600',
